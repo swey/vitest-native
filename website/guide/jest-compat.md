@@ -40,6 +40,7 @@ export default defineConfig({
 | `import { jest } from '@jest/globals'` | resolves to the `vi`-backed `jest` (aliased) |
 | top-level `jest.mock('m', factory)` | hoisted + applied, with Jest's factory interop |
 | `describe` / `it` / `expect` / `beforeEach` | same names, available as globals |
+| `jest.requireActual('@/x')` | resolves through your `resolve.alias`, including extensionless TypeScript targets |
 
 ## What it does *not* do
 

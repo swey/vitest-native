@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { jestMockInterop } from "./interop.mjs";
+import { parseAliasTable, resolveAliased } from "./aliases.mjs";
 import { VitestNativeError } from "../errors.mjs";
 
 // Resolve modules from the consumer project root, not this file's location, so
@@ -76,6 +77,10 @@ function callerFile() {
   return null;
 }
 
+// Aliases from the resolved Vite config, handed over by the plugin. requireActual
+// resolves through Node, which knows nothing about them.
+const aliasTable = parseAliasTable(process.env.VITEST_NATIVE_ALIASES);
+
 /** Resolve as Jest does: relative against the caller, bare from the project root. */
 function requireFrom(specifier) {
   if (typeof specifier === "string" && specifier.startsWith(".")) {
@@ -84,6 +89,11 @@ function requireFrom(specifier) {
     // could resolve some other file that happens to sit at the same relative path.
     if (caller) return createRequire(caller)(specifier);
   }
+  // An aliased specifier resolves nowhere in Node; expand it to the file the rest
+  // of the suite gets. A specifier no alias matches falls through unchanged, so
+  // the error stays Node's own MODULE_NOT_FOUND.
+  const aliased = resolveAliased(specifier, aliasTable);
+  if (aliased) return require(aliased);
   return require(specifier);
 }
 

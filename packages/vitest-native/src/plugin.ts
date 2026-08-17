@@ -15,6 +15,38 @@ import { detectEngine } from "./native/detect.js";
 import { detectEcosystemPackages } from "./native/ecosystem.js";
 import { containsPath, packageDirOf } from "./native/match.mjs";
 
+/**
+ * The `resolve.alias` entries jest-compat can act on, as plain data for the
+ * worker env. Only string replacements survive: a function replacement, or a
+ * target that is not a path, has nothing a synchronous `require` could use.
+ */
+function serializeAliases(
+  alias:
+    | Record<string, string>
+    | readonly { find: string | RegExp; replacement: string }[]
+    | undefined,
+): { find?: string; regex?: string; flags?: string; replacement: string }[] {
+  if (!alias) return [];
+  const entries = Array.isArray(alias)
+    ? alias
+    : Object.entries(alias).map(([find, replacement]) => ({ find, replacement }));
+  const serialized = [];
+  for (const entry of entries) {
+    if (typeof entry?.replacement !== "string") continue;
+    if (entry.find instanceof RegExp) {
+      serialized.push({
+        regex: entry.find.source,
+        flags: entry.find.flags,
+        replacement: entry.replacement,
+      });
+    } else if (typeof entry.find === "string") {
+      serialized.push({ find: entry.find, replacement: entry.replacement });
+    }
+  }
+  // Longest prefix first: '@/components' has to win over '@/'.
+  return serialized.sort((a, b) => (b.find?.length ?? 0) - (a.find?.length ?? 0));
+}
+
 const DEFAULT_ASSET_EXTS = [
   "png",
   "jpg",
@@ -899,6 +931,11 @@ export function reactNative(options?: VitestNativeOptions): Plugin {
         ...(options?.assetExts ?? []).map((e) => e.replace(/^\./, "")),
       ];
       env.VITEST_NATIVE_ASSET_EXTS = JSON.stringify(assetExtList);
+      // jest-compat's requireActual resolves through Node, which knows nothing
+      // about resolve.alias. Hand the table over so an aliased specifier reaches
+      // the same file the rest of the suite gets (see jest-compat/aliases.mjs).
+      const aliasTable = serializeAliases(userConfig.resolve?.alias);
+      if (aliasTable.length > 0) env.VITEST_NATIVE_ALIASES = JSON.stringify(aliasTable);
       if (hotRuntime && hotRecycle.preserveGlobals?.length) {
         env.VITEST_NATIVE_HOT_PRESERVE_GLOBALS = JSON.stringify(hotRecycle.preserveGlobals);
       }
